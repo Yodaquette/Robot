@@ -12,20 +12,20 @@
 #include "utility/Adafruit_MS_PWMServoDriver.h"
 #include "RF24.h"
 
-// Right ultrsonic sensor
-#define RIGHT_TRIGGER_PIN 3
-#define RIGHT_ECHO_PIN 2
-#define RIGHT_MAX_DISTANCE 300
-
 // Left ultrsonic sensor
 #define LEFT_TRIGGER_PIN 53
 #define LEFT_ECHO_PIN 52
 #define LEFT_MAX_DISTANCE 300
 
-// Right sensor
-NewPing rightPingSensor(RIGHT_TRIGGER_PIN,RIGHT_ECHO_PIN,RIGHT_MAX_DISTANCE);
+// Right ultrsonic sensor
+#define RIGHT_TRIGGER_PIN 50
+#define RIGHT_ECHO_PIN 51
+#define RIGHT_MAX_DISTANCE 300
+
 // Left sensor
 NewPing leftPingSensor(LEFT_TRIGGER_PIN,LEFT_ECHO_PIN,LEFT_MAX_DISTANCE);
+// Right sensor
+NewPing rightPingSensor(RIGHT_TRIGGER_PIN,RIGHT_ECHO_PIN,RIGHT_MAX_DISTANCE);
 
 // Motor objects
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -80,42 +80,56 @@ void Robot::startMotors()
 
 	return values:
 	0 - No obstacles
-	1 - obstacle detected on right ping sensor
-	2 - obstacle detected on left ping sensor
+	1 - obstacle detected on left ping sensor
+	2 - obstacle detected on right ping sensor
 	3 - obstacle detected on IR distance sensor
 */
 int Robot::checkObstacles()
 {
-	delay(10);
+	// Send ping signal in microseconds (uS) from both left and right
+	unsigned int right_uS = rightPingSensor.ping_median();
+	unsigned int left_uS = leftPingSensor.ping_median();
 
-	// Send ping signal in microseconds (uS)
-	unsigned int right_uS = rightPingSensor.ping();
-	unsigned int left_uS = leftPingSensor.ping();
-	
 	// IR distance sensor
 	// Value meanings:
-	// < 90 *infinite distance*
-	// < 100 = 80 cm; 31 in
-	// < 110 = 70 cm; 28 in
-	irDistSensor = analogRead(0);
+	// < 90 = infinite distance
+	// < 147 = 50cm; 20in
+	//irDistSensor = analogRead(0);
+
+	delay(10);
 
 	// If no object within 50 cm or if ping is unresponsive
 	// indicating that there is an open space greater
 	// than MAX_DISTANCE ahead
-	
-	
-	if((rightPingSensor.convert_cm(right_uS) > 50  || !rightPingSensor.ping())
-		&& (leftPingSensor.convert_cm(right_uS) > 50  || !leftPingSensor.ping()
-		&& irDistSensor < 100 || irDistSensor < 147 )
+	if((leftPingSensor.convert_cm(left_uS) > 50  || !leftPingSensor.ping())
+		&& (rightPingSensor.convert_cm(right_uS) > 50  || !rightPingSensor.ping())
+		/*&& (irDistSensor < 147 || irDistSensor < 100)*/)
 	{
 		// No obstacles ahead, output drive command
 		return 0;
 	}
-	else
+	else// if(leftPingSensor.convert_cm(left_uS) <= 50)
 	{
-		// Obstacle detected, output stop command
+		// Obstacle detected on left side
+		// output stop command
+		// turn right
 		return 1;
 	}
+//	else if(rightPingSensor.convert_cm(left_uS) <= 50)
+//	{
+//		// Obstacle detected on right side
+//		// output stop command
+//		// turn left
+//		return 2;
+//	}
+}
+
+/*
+	Determine which state to enter
+*/
+void Robot::actions(int state)
+{
+
 }
 
 //******Begin move states******
@@ -197,7 +211,6 @@ void Robot::halt()
 		LEFT_MOTOR->setSpeed(currentSpeed);
 		RIGHT_MOTOR->setSpeed(currentSpeed);
 		currentSpeed--;
-		delay(8);
 	}
 
 	RIGHT_MOTOR->run(RELEASE);
