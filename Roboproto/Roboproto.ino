@@ -1,13 +1,13 @@
 /*
 	Andrew Goodman
-	Fevruary 20, 2016
+	February 20, 2016
 
-	Robot Test
+	Run the robot
 */
 #include "Robot.h"
 
 // Instantiate robot
-Robot rob(6,5);
+Robot rob(41,43,42,39,40);
 
 void setup()
 {
@@ -16,6 +16,6 @@ void setup()
 
 void loop()
 {
-	rob.nav(rob.checkObstacles());
+	//rob.nav(rob.checkObstacles());
+	rob.actions(rob.checkObstacles());
 }
-

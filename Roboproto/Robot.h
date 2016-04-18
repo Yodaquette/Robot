@@ -15,19 +15,19 @@
 class Robot
 {
 	public:
-		Robot(int,int);
+		Robot(int,int,int,int,int);
 		void startMotors();
 		int checkObstacles();
-		void nav(int);
+		void actions(int);
+		void ramp();
 		void goForward();
 		void halt();
 		void reverse();
 		void turnLeft();
 		void turnRight();
 	private:
-		int STOP_LED,GO_LED;
-		float irDistSensor;
-		uint8_t currentSpeed;
+		int LTURN_LED,RTURN_LED,REVERSE_LED,STOP_LED,GO_LED;
+		uint8_t currentSpeed, maxSpeed, turnSpeed;
 };
 #endif
 /*END _robot_h*/

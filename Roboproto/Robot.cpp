@@ -10,7 +10,7 @@
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
 #include "utility/Adafruit_MS_PWMServoDriver.h"
-#include "RF24.h"
+#include <RF24.h>
 
 // Left ultrsonic sensor
 #define LEFT_TRIGGER_PIN 53
@@ -22,10 +22,17 @@
 #define RIGHT_ECHO_PIN 51
 #define RIGHT_MAX_DISTANCE 300
 
+// Front ultrsonic sensor
+#define FRONT_TRIGGER_PIN 49
+#define FRONT_ECHO_PIN 48
+#define FRONT_MAX_DISTANCE 400
+
 // Left sensor
 NewPing leftPingSensor(LEFT_TRIGGER_PIN,LEFT_ECHO_PIN,LEFT_MAX_DISTANCE);
 // Right sensor
 NewPing rightPingSensor(RIGHT_TRIGGER_PIN,RIGHT_ECHO_PIN,RIGHT_MAX_DISTANCE);
+// Front sensor
+NewPing frontPingSensor(FRONT_TRIGGER_PIN,FRONT_ECHO_PIN,FRONT_MAX_DISTANCE);
 
 // Motor objects
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -40,24 +47,33 @@ Adafruit_DCMotor *RIGHT_MOTOR = AFMS.getMotor(1);
 	@param - goLED
 	The pin number that controls the PWM of the go LED
 */
-Robot::Robot(int stopLED,int goLED)
+Robot::Robot(int leftTurnLED,int rightTurnLED,int reverseLED,int stopLED,int goLED)
 {	
 	// Assign LED pin numbers
+	LTURN_LED = leftTurnLED;
+	RTURN_LED = rightTurnLED;
+	REVERSE_LED = reverseLED;
 	STOP_LED = stopLED;
 	GO_LED = goLED;
 
-	// Set initial value for infrared proximity sensor
-	irDistSensor = 0;
-
 	// Set LEDs to output voltage
+	pinMode(LTURN_LED,OUTPUT);
+	pinMode(RTURN_LED,OUTPUT);
+	pinMode(REVERSE_LED,OUTPUT);
 	pinMode(STOP_LED,OUTPUT);
 	pinMode(GO_LED,OUTPUT);
 
-	// Test LEDs
+	// Set all LEDs to off
+	digitalWrite(LTURN_LED,LOW);
+	digitalWrite(RTURN_LED,LOW);
+	digitalWrite(REVERSE_LED,LOW);
 	digitalWrite(STOP_LED,LOW);
 	digitalWrite(GO_LED,LOW);
 }
 
+/*
+	Prime the motors
+*/
 void Robot::startMotors()
 {
 	// Start Adafruit motor shield
@@ -65,6 +81,10 @@ void Robot::startMotors()
 
 	// Set initial speed to 0
 	currentSpeed = 0;
+	// Set max speed to 180
+	maxSpeed = 180;
+	// Set turn speed to 120
+	turnSpeed = 120;
 
 	// Set initial values for the motors
 	LEFT_MOTOR->setSpeed(currentSpeed);
@@ -87,97 +107,134 @@ void Robot::startMotors()
 int Robot::checkObstacles()
 {
 	// Send ping signal in microseconds (uS) from both left and right
-	unsigned int right_uS = rightPingSensor.ping_median();
 	unsigned int left_uS = leftPingSensor.ping_median();
-
-	// IR distance sensor
-	// Value meanings:
-	// < 90 = infinite distance
-	// < 147 = 50cm; 20in
-	//irDistSensor = analogRead(0);
+	//unsigned int right_uS = rightPingSensor.ping_median();
+	//unsigned int front_uS = frontPingSensor.ping_median();
 
 	delay(10);
 
 	// If no object within 50 cm or if ping is unresponsive
 	// indicating that there is an open space greater
 	// than MAX_DISTANCE ahead
-	if((leftPingSensor.convert_cm(left_uS) > 50  || !leftPingSensor.ping())
-		&& (rightPingSensor.convert_cm(right_uS) > 50  || !rightPingSensor.ping())
-		/*&& (irDistSensor < 147 || irDistSensor < 100)*/)
-	{
-		// No obstacles ahead, output drive command
-		return 0;
-	}
-	else// if(leftPingSensor.convert_cm(left_uS) <= 50)
+//	if((leftPingSensor.convert_cm(left_uS) > 50  || !leftPingSensor.ping())
+//		&& (rightPingSensor.convert_cm(right_uS) > 50  || !rightPingSensor.ping())
+//		&& (frontPingSensor.convert_cm(front_uS) > 50 || !frontPingSensor.ping()))
+//	{
+//		// No obstacles ahead, output drive command
+//		return 0;
+//	}
+	if(leftPingSensor.convert_cm(left_uS) <= 30)
 	{
 		// Obstacle detected on left side
 		// output stop command
 		// turn right
 		return 1;
 	}
-//	else if(rightPingSensor.convert_cm(left_uS) <= 50)
+//	else if(rightPingSensor.ping() == true && rightPingSensor.convert_cm(right_uS) <= 30)
 //	{
 //		// Obstacle detected on right side
 //		// output stop command
 //		// turn left
 //		return 2;
 //	}
+//	else if(frontPingSensor.ping() == true && frontPingSensor.convert_cm(front_uS) <= 50)
+//	{
+//		// Obstacle detected in the front
+//		// output stop command
+//		// reverse
+//		return 3;
+//	}
+	else
+	{
+		// Nothing detected, keep moving
+		return 0;
+	}
 }
 
 /*
-	Determine which state to enter
+	Determines which state to enter
+	by the value returned from checkObstacles() function
 */
 void Robot::actions(int state)
 {
-
+	switch (state)
+	{
+		case 0:
+			ramp();
+			goForward();
+			break;
+		case 1:
+			halt();
+			turnRight();
+			break;
+		case 2:
+			halt();
+			turnLeft();
+			break;
+		case 3:
+			halt();
+			reverse();
+			break;
+	}
 }
 
 //******Begin move states******
 // Send power to the motors
-void Robot::nav(int obstacleSeen)
+void Robot::ramp()
 {
-	// If no obstacle is detected
-	if(obstacleSeen == 0)
-	{	
-		// Green light = drive
-		digitalWrite(STOP_LED,LOW);
-		digitalWrite(GO_LED,HIGH);
-	
-		LEFT_MOTOR->run(FORWARD);
-		RIGHT_MOTOR->run(FORWARD);
-	
-		// Accelerate motors to full speed
-		// in 2040 milliseconds
-		if(currentSpeed == 0)
-		{
-			while(currentSpeed <= 180)
-			{
-				LEFT_MOTOR->setSpeed(currentSpeed);
-				RIGHT_MOTOR->setSpeed(currentSpeed);
-				currentSpeed++;
+	// Green light = drive
+	digitalWrite(LTURN_LED,LOW);
+	digitalWrite(RTURN_LED,LOW);
+	digitalWrite(REVERSE_LED,LOW);
+	digitalWrite(STOP_LED,LOW);
+	digitalWrite(GO_LED,HIGH);
 
-				// If any obstacle encountered, then break out of acceleration
-				if(checkObstacles() == 1)
-				{
-					break;
-					//enterMoveState();
-				}
+	LEFT_MOTOR->run(FORWARD);
+	RIGHT_MOTOR->run(FORWARD);
+
+	// Accelerate motors to maximum speed
+	if(currentSpeed == 0)
+	{
+		while(currentSpeed <= maxSpeed)
+		{
+			LEFT_MOTOR->setSpeed(currentSpeed);
+			RIGHT_MOTOR->setSpeed(currentSpeed);
+			currentSpeed++;
+
+			// If any obstacle encountered, then break out of acceleration
+			if(checkObstacles() > 0)
+			{
+				// Break out of the acceleration loop
+				break;
 			}
-			goForward();
-			halt();
+
+			// Delay 0.01 seconds
+			delay(10);
 		}
-//		else
-//		{
-//			while()
-//		}
-		
-		RIGHT_MOTOR->run(RELEASE);
-		LEFT_MOTOR->run(RELEASE);
+
+		if (checkObstacles() > 0)
+		{
+			// Enter the actions function
+			actions(checkObstacles());
+		}
+	}
+	else
+	{
+		// If motors are already running then
+		// keep going forward
+		goForward();
 	}
 }
 
 void Robot::goForward()
 {
+	// Green light = drive
+	digitalWrite(LTURN_LED,LOW);
+	digitalWrite(RTURN_LED,LOW);
+	digitalWrite(REVERSE_LED,LOW);
+	digitalWrite(STOP_LED,LOW);
+	digitalWrite(GO_LED,HIGH);
+	
 	LEFT_MOTOR->run(FORWARD);
 	RIGHT_MOTOR->run(FORWARD);
 	
@@ -186,24 +243,23 @@ void Robot::goForward()
 		LEFT_MOTOR->setSpeed(currentSpeed);
 		RIGHT_MOTOR->setSpeed(currentSpeed);
 
-		if(checkObstacles() == 1)
+		// If anything detected, stop driving forward
+		if(checkObstacles() > 0)
 		{
 			break;
 		}
 	}
-
-	RIGHT_MOTOR->run(RELEASE);
-	LEFT_MOTOR->run(RELEASE);
 }
 
 // Stop sending power to the motors
 void Robot::halt()
-{
-	//uint8_t decel;
-	
+{	
 	// Red light = STOP!
-	digitalWrite(GO_LED,LOW);
+	digitalWrite(LTURN_LED,LOW);
+	digitalWrite(RTURN_LED,LOW);
+	digitalWrite(REVERSE_LED,LOW);
 	digitalWrite(STOP_LED,HIGH);
+	digitalWrite(GO_LED,LOW);
 
 	// Decelerate motors to until they stop
 	while(currentSpeed > 0)
@@ -219,22 +275,31 @@ void Robot::halt()
 
 void Robot::reverse()
 {
-//	uint8_t accel;
-	
-	// Red light = STOP!
-	digitalWrite(GO_LED,HIGH);
-	digitalWrite(STOP_LED,HIGH);
+	// White light = REVERSE!
+	digitalWrite(LTURN_LED,LOW);
+	digitalWrite(RTURN_LED,LOW);
+	digitalWrite(REVERSE_LED,HIGH);
+	digitalWrite(GO_LED,LOW);
+	digitalWrite(STOP_LED,LOW);
 
 	LEFT_MOTOR->run(BACKWARD);
 	RIGHT_MOTOR->run(BACKWARD);
 	
-	// Accelerate motors to full speed
-	// in 2040 milliseconds
-	for(currentSpeed = 0; currentSpeed <= 240; currentSpeed++)
+	// Accelerate motors in reverse
+	for(currentSpeed = 0; currentSpeed <= maxSpeed; currentSpeed++)
 	{
-		delay(8);
 		LEFT_MOTOR->setSpeed(currentSpeed);
 		RIGHT_MOTOR->setSpeed(currentSpeed);
+
+		// If the view is clear
+		// break the loop and stop driving
+		// in reverse
+		if(checkObstacles() == 0)
+		{
+			break;	
+		}
+
+		delay(10);
 	}
 	// Stop motors
 	LEFT_MOTOR->setSpeed(0);
@@ -244,37 +309,61 @@ void Robot::reverse()
 	LEFT_MOTOR->run(RELEASE);
 }
 
-// Send power to the left motor motor
+// Send forward power to the left motor
+// and backward power to the right motor
 void Robot::turnLeft()
-{
-	//uint8_t accel;
+{	
+	// Yellow light = TURN LEFT
+	digitalWrite(LTURN_LED,HIGH);
+	digitalWrite(RTURN_LED,LOW);
+	digitalWrite(GO_LED,LOW);
+	digitalWrite(STOP_LED,LOW);
+	digitalWrite(REVERSE_LED,LOW);
 	
 	LEFT_MOTOR->run(FORWARD);
-	RIGHT_MOTOR->setSpeed(0);
-	//LEFT_MOTOR->setSpeed(255);
+	RIGHT_MOTOR->run(BACKWARD);
 
-	for(currentSpeed = 0;currentSpeed <= 150;currentSpeed++)
+	// Turn left until no obstacles detected
+	while(1)
 	{
-		delay(8);
-		LEFT_MOTOR->setSpeed(currentSpeed);
+		LEFT_MOTOR->setSpeed(turnSpeed);
+		RIGHT_MOTOR->setSpeed(turnSpeed);
+
+		if(checkObstacles() == 0)
+		{
+			break;
+		}
 	}
 
 	RIGHT_MOTOR->run(RELEASE);
 	LEFT_MOTOR->run(RELEASE);
 }
 
-// Send power to the right motor motor
+// Send backward power to the left motor
+// and forward power to the right motor
 void Robot::turnRight()
 {
-	//uint8_t accel;
+	// Yellow light = TURN
+	digitalWrite(LTURN_LED,LOW);
+	digitalWrite(RTURN_LED,HIGH);
+	digitalWrite(REVERSE_LED,LOW);
+	digitalWrite(GO_LED,LOW);
+	digitalWrite(STOP_LED,LOW);
 	
+	LEFT_MOTOR->run(BACKWARD);
 	RIGHT_MOTOR->run(FORWARD);
-	LEFT_MOTOR->setSpeed(0);
 
-	for(currentSpeed = 0;currentSpeed <= 150;currentSpeed++)
+	// Turn right
+	while(1)
 	{
-		delay(8);
-		RIGHT_MOTOR->setSpeed(currentSpeed);
+		LEFT_MOTOR->setSpeed(turnSpeed);
+		RIGHT_MOTOR->setSpeed(turnSpeed);
+
+		// Turn right until no obstacles detected
+		if(checkObstacles() == 0)
+		{
+			break;
+		}
 	}
 
 	RIGHT_MOTOR->run(RELEASE);
