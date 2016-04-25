@@ -23,16 +23,17 @@
 #define RIGHT_MAX_DISTANCE 300
 
 // Front ultrsonic sensor
-#define FRONT_TRIGGER_PIN 49
-#define FRONT_ECHO_PIN 48
-#define FRONT_MAX_DISTANCE 400
+//#define FRONT_TRIGGER_PIN 49
+//#define FRONT_ECHO_PIN 48
+//#define FRONT_MAX_DISTANCE 400
+#define IR_SENSOR 0
 
 // Left sensor
 NewPing leftPingSensor(LEFT_TRIGGER_PIN,LEFT_ECHO_PIN,LEFT_MAX_DISTANCE);
 // Right sensor
 NewPing rightPingSensor(RIGHT_TRIGGER_PIN,RIGHT_ECHO_PIN,RIGHT_MAX_DISTANCE);
 // Front sensor
-NewPing frontPingSensor(FRONT_TRIGGER_PIN,FRONT_ECHO_PIN,FRONT_MAX_DISTANCE);
+//NewPing frontPingSensor(FRONT_TRIGGER_PIN,FRONT_ECHO_PIN,FRONT_MAX_DISTANCE);
 
 // Motor objects
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -42,10 +43,16 @@ Adafruit_DCMotor *RIGHT_MOTOR = AFMS.getMotor(1);
 /*
 	Robot constructor
 
-	@param - stopLED
-	The pin number that controls the PWM of the stop LED
-	@param - goLED
-	The pin number that controls the PWM of the go LED
+	@param stopLED
+	The pin number of the stop LED
+	@param goLED
+	The pin number of the go LED
+	@param reverseLED
+	The pin number of the reverse LED
+	@param leftLED
+	The pin number of the left LED
+	@param rightLED
+	The pin number of the right LED
 */
 Robot::Robot(int leftTurnLED,int rightTurnLED,int reverseLED,int stopLED,int goLED)
 {	
@@ -96,6 +103,29 @@ void Robot::startMotors()
 }
 
 /*
+	Calculates the average of 10 readings
+	from the IR sensor
+
+	@returns distance in centimeters
+*/
+int Robot::irReadMedian()
+{
+	// Hold the sum of the IR readings
+	int irReadings = 0;
+	
+	for(uint8_t i = 0; i < (sizeof(irReadings)/sizeof(int)); i++)
+	{
+		// Store IR reading converted to centimeters
+		irReadings += (4800 / (analogRead(IR_SENSOR) - 20));
+		
+		delay(10);
+	}
+
+	// Return the calculated average of the IR readings
+	return irReadings / (sizeof(irReadings)/sizeof(int));
+}
+
+/*
 	Check for obstacles
 
 	return values:
@@ -103,12 +133,14 @@ void Robot::startMotors()
 	1 - obstacle detected on left ping sensor
 	2 - obstacle detected on right ping sensor
 	3 - obstacle detected on IR distance sensor
+
+	@returns 
 */
 int Robot::checkObstacles()
 {
 	// Send ping signal in microseconds (uS) from both left and right
 	unsigned int left_uS = leftPingSensor.ping_median();
-	//unsigned int right_uS = rightPingSensor.ping_median();
+	unsigned int right_uS = rightPingSensor.ping_median();
 	//unsigned int front_uS = frontPingSensor.ping_median();
 
 	delay(10);
@@ -130,20 +162,20 @@ int Robot::checkObstacles()
 		// turn right
 		return 1;
 	}
-//	else if(rightPingSensor.ping() == true && rightPingSensor.convert_cm(right_uS) <= 30)
-//	{
-//		// Obstacle detected on right side
-//		// output stop command
-//		// turn left
-//		return 2;
-//	}
-//	else if(frontPingSensor.ping() == true && frontPingSensor.convert_cm(front_uS) <= 50)
-//	{
-//		// Obstacle detected in the front
-//		// output stop command
-//		// reverse
-//		return 3;
-//	}
+	else if(rightPingSensor.ping() == true && rightPingSensor.convert_cm(right_uS) <= 30)
+	{
+		// Obstacle detected on right side
+		// output stop command
+		// turn left
+		return 2;
+	}
+	else if(irReadMedian() <= 50)
+	{
+		// Obstacle detected in the front
+		// output stop command
+		// reverse
+		return 3;
+	}
 	else
 	{
 		// Nothing detected, keep moving
@@ -164,7 +196,7 @@ void Robot::actions(int state)
 			goForward();
 			break;
 		case 1:
-			halt();
+			//halt();
 			turnRight();
 			break;
 		case 2:
@@ -260,6 +292,9 @@ void Robot::halt()
 	digitalWrite(REVERSE_LED,LOW);
 	digitalWrite(STOP_LED,HIGH);
 	digitalWrite(GO_LED,LOW);
+
+	// Wait .50 seconds
+	//delay(500);
 
 	// Decelerate motors to until they stop
 	while(currentSpeed > 0)

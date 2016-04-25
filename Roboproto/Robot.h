@@ -19,6 +19,7 @@ class Robot
 		void startMotors();
 		int checkObstacles();
 		void actions(int);
+		int irReadMedian();
 		void ramp();
 		void goForward();
 		void halt();
